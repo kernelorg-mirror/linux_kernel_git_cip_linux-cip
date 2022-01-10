@@ -918,7 +918,7 @@ static int ravb_poll(struct napi_struct *napi, int budget)
 	ravb_write(ndev, ~(mask | RIS0_RESERVED), RIS0);
 	unmask = !ravb_rx(ndev, &quota, q);
 
-	/* Processing RX Descriptor Ring */
+	/* Processing TX Descriptor Ring */
 	spin_lock_irqsave(&priv->lock, flags);
 	/* Clear TX interrupt */
 	ravb_write(ndev, ~(mask | TIS_RESERVED), TIS);
