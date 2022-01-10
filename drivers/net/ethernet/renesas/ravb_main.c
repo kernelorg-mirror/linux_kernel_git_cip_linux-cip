@@ -29,6 +29,7 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/sys_soc.h>
+#include <linux/reset.h>
 
 #include <asm/div64.h>
 
@@ -2172,6 +2173,7 @@ static int ravb_probe(struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
 	const struct ravb_hw_info *info;
+	struct reset_control *rstc;
 	struct ravb_private *priv;
 	struct net_device *ndev;
 	int error, irq, q;
@@ -2184,6 +2186,11 @@ static int ravb_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
+	rstc = devm_reset_control_get_optional_exclusive(&pdev->dev, NULL);
+	if (IS_ERR(rstc))
+		return dev_err_probe(&pdev->dev, PTR_ERR(rstc),
+				     "failed to get cpg reset\n");
+
 	ndev = alloc_etherdev_mqs(sizeof(struct ravb_private),
 				  NUM_TX_QUEUE, NUM_RX_QUEUE);
 	if (!ndev)
@@ -2194,6 +2201,7 @@ static int ravb_probe(struct platform_device *pdev)
 	ndev->features = info->net_features;
 	ndev->hw_features = info->net_hw_features;
 
+	reset_control_deassert(rstc);
 	pm_runtime_enable(&pdev->dev);
 	error = pm_runtime_resume_and_get(&pdev->dev);
 	if (error < 0)
@@ -2213,6 +2221,7 @@ static int ravb_probe(struct platform_device *pdev)
 
 	priv = netdev_priv(ndev);
 	priv->info = info;
+	priv->rstc = rstc;
 	priv->ndev = ndev;
 	priv->pdev = pdev;
 	priv->num_tx_ring[RAVB_BE] = BE_TX_RING_SIZE;
@@ -2384,6 +2393,7 @@ out_release:
 	pm_runtime_put(&pdev->dev);
 out_rpm_disable:
 	pm_runtime_disable(&pdev->dev);
+	reset_control_assert(rstc);
 	return error;
 }
 
@@ -2409,6 +2419,7 @@ static int ravb_remove(struct platform_device *pdev)
 			  priv->desc_bat_dma);
 	pm_runtime_put_sync(&pdev->dev);
 	pm_runtime_disable(&pdev->dev);
+	reset_control_assert(priv->rstc);
 	free_netdev(ndev);
 	platform_set_drvdata(pdev, NULL);
 
