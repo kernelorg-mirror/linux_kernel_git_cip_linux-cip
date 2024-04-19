@@ -341,7 +341,7 @@ rzg2l_cpg_sd_mux_clk_register(const struct cpg_core_clk *core,
 	sd_mux_hw_data->hw_data.sconf = core->sconf;
 	sd_mux_hw_data->mtable = core->mtable;
 
-	init.name = GET_SHIFT(core->conf) ? "sd1" : "sd0";
+	init.name = core->name;
 	init.ops = &rzg2l_cpg_sd_clk_mux_ops;
 	init.flags = core->flag;
 	init.num_parents = core->num_parents;
