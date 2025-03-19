@@ -1272,6 +1272,7 @@ static void sci_dma_tx_complete(void *arg)
 	s->tx_occurred = true;
 
 	if (!uart_circ_empty(xmit)) {
+		s->tx_occurred = true;
 		s->cookie_tx = 0;
 		schedule_work(&s->work_tx);
 	} else {
