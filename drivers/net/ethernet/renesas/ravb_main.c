@@ -1613,6 +1613,7 @@ static netdev_tx_t ravb_start_xmit(struct sk_buff *skb, struct net_device *ndev)
 	} else {
 		desc->die_dt = DT_FSINGLE;
 	}
+
 	/* Before ringing the doorbell we need to make sure that the latest
 	 * writes have been committed to memory, otherwise it could delay
 	 * things until the doorbell is rang again.
