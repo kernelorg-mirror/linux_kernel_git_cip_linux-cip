@@ -1,0 +1,14 @@
+KNOWN BUGS
+==========
+
+After end of 4.19-stable maintainance, CIP project maintains 4.19 kernel
+tree. We try to fix as many bugs as possible, but sometimes backport
+from mainline is not feasible or not done by the stable team, and
+sometimes backport from 4.9-stable+ to 4.4-st is not feasible or not
+done for other reasons.
+
+In major cases this happens, we'll try to add notes here. Detailed
+per-patch status is available at
+git@gitlab.com:cip-project/cip-kernel/lts-commit-list.git file
+v4.19.org, or can be pulled from git history.
+
