@@ -12,3 +12,14 @@ per-patch status is available at
 git@gitlab.com:cip-project/cip-kernel/lts-commit-list.git file
 v4.19.org, or can be pulled from git history.
 
+4.19.325-cip126-rt45 cgroup conflict
+------------------------------------
+
+During creation of 4.19.325-cip126-rt45, there was conflict between
+changes in -cip126 and the realtime tree. Essentially -rt rewrote
+cgroup handling in commit 8990cf9c6a "cgroups: use simple wait in
+css_release()" while -cip now contains commit 79f919a89c "cgroup:
+split cgroup_destroy_wq into 3 workqueues". We currently don't know
+how to fix the conflict (or how to test the result), so we reverted
+79f919a89c in the 4.19.325-cip126-rt45. 79f919a89c is also known as
+CVE-2025-39953.
