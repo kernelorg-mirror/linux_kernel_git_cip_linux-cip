@@ -11,10 +11,12 @@
  * Copyright (C) 2015 Renesas Electronics Corp.
  */
 
+#include <linux/atomic.h>
 #include <linux/bitfield.h>
 #include <linux/clk.h>
 #include <linux/clk-provider.h>
 #include <linux/clk/renesas.h>
+#include <linux/debugfs.h>
 #include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/init.h>
@@ -67,6 +69,9 @@
 #define CPG_WEN_BIT		BIT(16)
 
 #define MAX_VCLK_FREQ		(148500000)
+
+#define MSTOP_OFF(conf)		FIELD_GET(GENMASK(31, 16), (conf))
+#define MSTOP_MASK(conf)	FIELD_GET(GENMASK(15, 0), (conf))
 
 /**
  * struct clk_hw_data - clock hardware data
@@ -1191,21 +1196,38 @@ fail:
 }
 
 /**
+ * struct mstop - MSTOP specific data structure
+ * @usecnt: Usage counter for MSTOP settings (when zero the settings
+ *          are applied to register)
+ * @conf: MSTOP configuration (register offset, setup bits)
+ */
+struct mstop {
+	atomic_t usecnt;
+	u32 conf;
+};
+
+/**
  * struct mstp_clock - MSTP gating clock
  *
  * @hw: handle between common and hardware-specific interfaces
  * @priv: CPG/MSTP private data
  * @sibling: pointer to the other coupled clock
+ * @mstop: MSTOP configuration
+ * @shared_mstop_clks: clocks sharing the MSTOP with this clock
  * @off: register offset
  * @bit: ON/MON bit
+ * @num_shared_mstop_clks: number of the clocks sharing MSTOP with this clock
  * @enabled: soft state of the clock, if it is coupled with another clock
  */
 struct mstp_clock {
 	struct clk_hw hw;
 	struct rzg2l_cpg_priv *priv;
 	struct mstp_clock *sibling;
+	struct mstop *mstop;
+	struct mstp_clock **shared_mstop_clks;
 	u16 off;
 	u8 bit;
+	u8 num_shared_mstop_clks;
 	bool enabled;
 };
 
@@ -1218,6 +1240,101 @@ struct mstp_clock {
 		else if (((hw) = __clk_get_hw((priv)->clks[(priv)->num_core_clks + it])) && \
 			 ((mod_clock) = to_mod_clock(hw)))
 
+/* Need to be called with a lock held to avoid concurrent access to mstop->usecnt. */
+static void rzg2l_mod_clock_module_set_state(struct mstp_clock *clock,
+					     bool standby)
+{
+	struct rzg2l_cpg_priv *priv = clock->priv;
+	struct mstop *mstop = clock->mstop;
+	bool update = false;
+	u32 value;
+
+	if (!mstop)
+		return;
+
+	value = MSTOP_MASK(mstop->conf) << 16;
+
+	if (standby) {
+		unsigned int i, criticals = 0;
+
+		for (i = 0; i < clock->num_shared_mstop_clks; i++) {
+			struct mstp_clock *clk = clock->shared_mstop_clks[i];
+
+			if (clk_hw_get_flags(&clk->hw) & CLK_IS_CRITICAL)
+				criticals++;
+		}
+
+		if (!clock->num_shared_mstop_clks &&
+		    clk_hw_get_flags(&clock->hw) & CLK_IS_CRITICAL)
+			criticals++;
+
+		/*
+		 * If this is a shared MSTOP and it is shared with critical clocks,
+		 * and the system boots up with this clock enabled but no driver
+		 * uses it the CCF will disable it (as it is unused). As we don't
+		 * increment reference counter for it at registration (to avoid
+		 * messing with clocks enabled at probe but later used by drivers)
+		 * do not set the MSTOP here too if it is shared with critical
+		 * clocks and ref counted only by those critical clocks.
+		 */
+		if (criticals && criticals == atomic_read(&mstop->usecnt))
+			return;
+
+		value |= MSTOP_MASK(mstop->conf);
+
+		/* Allow updates on probe when usecnt = 0. */
+		if (!atomic_read(&mstop->usecnt))
+			update = true;
+		else
+			update = atomic_dec_and_test(&mstop->usecnt);
+	} else {
+		if (!atomic_read(&mstop->usecnt))
+			update = true;
+		atomic_inc(&mstop->usecnt);
+	}
+
+	if (update)
+		writel(value, priv->base + MSTOP_OFF(mstop->conf));
+}
+
+static int rzg2l_mod_clock_mstop_show(struct seq_file *s, void *what)
+{
+	struct rzg2l_cpg_priv *priv = s->private;
+	struct mstp_clock *clk;
+	struct clk_hw *hw;
+	unsigned int i;
+
+	seq_printf(s, "%-20s %-5s %-10s\n", "", "", "MSTOP");
+	seq_printf(s, "%-20s %-5s %-10s\n", "", "clk", "-------------------------");
+	seq_printf(s, "%-20s %-5s %-5s %-5s %-6s %-6s\n",
+		   "clk_name", "cnt", "cnt", "off", "val", "shared");
+	seq_printf(s, "%-20s %-5s %-5s %-5s %-6s %-6s\n",
+		   "--------", "-----", "-----", "-----", "------", "------");
+
+	for_each_mod_clock(i, clk, hw, priv) {
+		unsigned int j;
+		u32 val;
+
+		if (!clk->mstop)
+			continue;
+
+		val = readl(priv->base + MSTOP_OFF(clk->mstop->conf)) &
+		      MSTOP_MASK(clk->mstop->conf);
+
+		seq_printf(s, "%-20s %-5d %-5d 0x%-3lx 0x%-4x", clk_hw_get_name(hw),
+			   __clk_get_enable_count(hw->clk), atomic_read(&clk->mstop->usecnt),
+			   MSTOP_OFF(clk->mstop->conf), val);
+
+		for (j = 0; j < clk->num_shared_mstop_clks; j++)
+			seq_printf(s, " %pC", clk->shared_mstop_clks[j]->hw.clk);
+
+		seq_puts(s, "\n");
+	}
+
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(rzg2l_mod_clock_mstop);
+
 static int rzg2l_mod_clock_endisable(struct clk_hw *hw, bool enable)
 {
 	struct mstp_clock *clock = to_mod_clock(hw);
@@ -1225,6 +1342,7 @@ static int rzg2l_mod_clock_endisable(struct clk_hw *hw, bool enable)
 	unsigned int reg = clock->off;
 	struct device *dev = priv->dev;
 	u32 bitmask = BIT(clock->bit);
+	unsigned long flags;
 	u32 value;
 	int error;
 
@@ -1240,7 +1358,15 @@ static int rzg2l_mod_clock_endisable(struct clk_hw *hw, bool enable)
 	if (enable)
 		value |= bitmask;
 
-	writel(value, priv->base + CLK_ON_R(reg));
+	spin_lock_irqsave(&priv->rmw_lock, flags);
+	if (enable) {
+		writel(value, priv->base + CLK_ON_R(reg));
+		rzg2l_mod_clock_module_set_state(clock, false);
+	} else {
+		rzg2l_mod_clock_module_set_state(clock, true);
+		writel(value, priv->base + CLK_ON_R(reg));
+	}
+	spin_unlock_irqrestore(&priv->rmw_lock, flags);
 
 	if (!enable)
 		return 0;
@@ -1342,6 +1468,89 @@ static struct mstp_clock
 	return NULL;
 }
 
+static struct mstop *rzg2l_mod_clock_get_mstop(struct rzg2l_cpg_priv *priv, u32 conf)
+{
+	struct mstp_clock *clk;
+	struct clk_hw *hw;
+	unsigned int i;
+
+	for_each_mod_clock(i, clk, hw, priv) {
+		if (!clk->mstop)
+			continue;
+
+		if (clk->mstop->conf == conf)
+			return clk->mstop;
+	}
+
+	return NULL;
+}
+
+static void rzg2l_mod_clock_init_mstop(struct rzg2l_cpg_priv *priv)
+{
+	struct mstp_clock *clk;
+	struct clk_hw *hw;
+	unsigned int i;
+
+	for_each_mod_clock(i, clk, hw, priv) {
+		unsigned long flags;
+
+		if (!clk->mstop)
+			continue;
+
+		/*
+		 * Out of reset all modules are enabled. Set module state
+		 * in case associated clocks are disabled at probe. Otherwise
+		 * module is in invalid HW state.
+		 */
+		spin_lock_irqsave(&priv->rmw_lock, flags);
+		if (!rzg2l_mod_clock_is_enabled(&clk->hw))
+			rzg2l_mod_clock_module_set_state(clk, true);
+		spin_unlock_irqrestore(&priv->rmw_lock, flags);
+	}
+}
+
+static int rzg2l_mod_clock_update_shared_mstop_clks(struct rzg2l_cpg_priv *priv,
+						    struct mstp_clock *clock)
+{
+	struct mstp_clock *clk;
+	struct clk_hw *hw;
+	unsigned int i;
+
+	if (!clock->mstop)
+		return 0;
+
+	for_each_mod_clock(i, clk, hw, priv) {
+		int num_shared_mstop_clks, incr = 1;
+		struct mstp_clock **new_clks;
+		unsigned int j;
+
+		if (clk->mstop != clock->mstop)
+			continue;
+
+		num_shared_mstop_clks = clk->num_shared_mstop_clks;
+		if (!num_shared_mstop_clks)
+			incr++;
+
+		new_clks = devm_krealloc(priv->dev, clk->shared_mstop_clks,
+					 (num_shared_mstop_clks + incr) * sizeof(*new_clks),
+					 GFP_KERNEL);
+		if (!new_clks)
+			return -ENOMEM;
+
+		if (!num_shared_mstop_clks)
+			new_clks[num_shared_mstop_clks++] = clk;
+		new_clks[num_shared_mstop_clks++] = clock;
+
+		for (j = 0; j < num_shared_mstop_clks; j++) {
+			new_clks[j]->shared_mstop_clks = new_clks;
+			new_clks[j]->num_shared_mstop_clks = num_shared_mstop_clks;
+		}
+		break;
+	}
+
+	return 0;
+}
+
 static void __init
 rzg2l_cpg_register_mod_clk(const struct rzg2l_mod_clk *mod,
 			   const struct rzg2l_cpg_info *info,
@@ -1354,6 +1563,7 @@ rzg2l_cpg_register_mod_clk(const struct rzg2l_mod_clk *mod,
 	struct clk *parent, *clk;
 	const char *parent_name;
 	unsigned int i;
+	int ret;
 
 	WARN_DEBUG(id < priv->num_core_clks);
 	WARN_DEBUG(id >= priv->num_core_clks + priv->num_mod_clks);
@@ -1397,6 +1607,21 @@ rzg2l_cpg_register_mod_clk(const struct rzg2l_mod_clk *mod,
 	clock->priv = priv;
 	clock->hw.init = &init;
 
+	if (mod->mstop_conf) {
+		struct mstop *mstop = rzg2l_mod_clock_get_mstop(priv, mod->mstop_conf);
+
+		if (!mstop) {
+			mstop = devm_kzalloc(dev, sizeof(*mstop), GFP_KERNEL);
+			if (!mstop) {
+				clk = ERR_PTR(-ENOMEM);
+				goto fail;
+			}
+			mstop->conf = mod->mstop_conf;
+			atomic_set(&mstop->usecnt, 0);
+		}
+		clock->mstop = mstop;
+	}
+
 	clk = clk_register(NULL, &clock->hw);
 	if (IS_ERR(clk))
 		goto fail;
@@ -1410,6 +1635,13 @@ rzg2l_cpg_register_mod_clk(const struct rzg2l_mod_clk *mod,
 			clock->sibling = sibling;
 			sibling->sibling = clock;
 		}
+	}
+
+	/* Keep this before priv->clks[id] is updated. */
+	ret = rzg2l_mod_clock_update_shared_mstop_clks(priv, clock);
+	if (ret) {
+		clk = ERR_PTR(ret);
+		goto fail;
 	}
 
 	dev_dbg(dev, "Module clock %pC at %lu Hz\n", clk, clk_get_rate(clk));
@@ -1703,6 +1935,13 @@ static int __init rzg2l_cpg_probe(struct platform_device *pdev)
 	for (i = 0; i < info->num_mod_clks; i++)
 		rzg2l_cpg_register_mod_clk(&info->mod_clks[i], info, priv);
 
+	/*
+	 * Initialize MSTOP after all the clocks were registered to avoid
+	 * invalid reference counting when multiple clocks (critical,
+	 * non-critical) share the same MSTOP.
+	 */
+	rzg2l_mod_clock_init_mstop(priv);
+
 	error = of_clk_add_provider(np, rzg2l_cpg_clk_src_twocell_get, priv);
 	if (error)
 		return error;
@@ -1719,8 +1958,22 @@ static int __init rzg2l_cpg_probe(struct platform_device *pdev)
 	if (error)
 		return error;
 
+	debugfs_create_file("mstop", 0444, NULL, priv, &rzg2l_mod_clock_mstop_fops);
 	return 0;
 }
+
+static int rzg2l_cpg_resume(struct device *dev)
+{
+	struct rzg2l_cpg_priv *priv = dev_get_drvdata(dev);
+
+	rzg2l_mod_clock_init_mstop(priv);
+
+	return 0;
+}
+
+static const struct dev_pm_ops rzg2l_cpg_pm_ops = {
+	SET_NOIRQ_SYSTEM_SLEEP_PM_OPS(NULL, rzg2l_cpg_resume)
+};
 
 static const struct of_device_id rzg2l_cpg_match[] = {
 #ifdef CONFIG_CLK_R9A07G043
@@ -1760,6 +2013,7 @@ static struct platform_driver rzg2l_cpg_driver = {
 	.driver		= {
 		.name	= "rzg2l-cpg",
 		.of_match_table = rzg2l_cpg_match,
+		.pm	= pm_ptr(&rzg2l_cpg_pm_ops),
 	},
 };
 
