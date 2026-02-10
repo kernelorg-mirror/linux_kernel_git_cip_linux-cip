@@ -577,14 +577,42 @@ static const struct riic_of_data riic_rz_v2h_info = {
 	.fast_mode_plus = true,
 };
 
+#ifdef CONFIG_PM_SLEEP
 static int riic_i2c_suspend(struct device *dev)
 {
-	struct riic_dev *riic = dev_get_drvdata(dev);
-	int ret;
+	/*
+	 * Some I2C devices may need the I2C controller to remain active
+	 * during resume_noirq() or suspend_noirq(). If the controller is
+	 * autosuspended, there is no way to wake it up once runtime PM is
+	 * disabled (in suspend_late()).
+	 *
+	 * During system resume, the I2C controller will be available only
+	 * after runtime PM is re-enabled (in resume_early()). However, this
+	 * may be too late for some devices.
+	 *
+	 * Wake up the controller in the suspend() callback while runtime PM
+	 * is still enabled. The I2C controller will remain available until
+	 * the suspend_noirq() callback (pm_runtime_force_suspend()) is
+	 * called. During resume, the I2C controller can be restored by the
+	 * resume_noirq() callback (pm_runtime_force_resume()).
+	 *
+	 * Finally, the resume() callback re-enables autosuspend, ensuring
+	 * the I2C controller remains available until the system enters
+	 * suspend_noirq() and from resume_noirq().
+	 */
+	return pm_runtime_resume_and_get(dev);
+}
 
-	ret = pm_runtime_resume_and_get(dev);
-	if (ret)
-		return ret;
+static int riic_i2c_resume(struct device *dev)
+{
+	pm_runtime_put_autosuspend(dev);
+
+	return 0;
+}
+
+static int riic_i2c_suspend_noirq(struct device *dev)
+{
+	struct riic_dev *riic = dev_get_drvdata(dev);
 
 	i2c_mark_adapter_suspended(&riic->adapter);
 
@@ -592,17 +620,21 @@ static int riic_i2c_suspend(struct device *dev)
 	riic_clear_set_bit(riic, ICCR1_ICE, 0, RIIC_ICCR1);
 
 	pm_runtime_mark_last_busy(dev);
-	pm_runtime_put_sync(dev);
+	pm_runtime_force_suspend(dev);
 
 	return reset_control_assert(riic->rstc);
 }
 
-static int riic_i2c_resume(struct device *dev)
+static int riic_i2c_resume_noirq(struct device *dev)
 {
 	struct riic_dev *riic = dev_get_drvdata(dev);
 	int ret;
 
 	ret = reset_control_deassert(riic->rstc);
+	if (ret)
+		return ret;
+
+	ret = pm_runtime_force_resume(dev);
 	if (ret)
 		return ret;
 
@@ -621,8 +653,10 @@ static int riic_i2c_resume(struct device *dev)
 
 	return 0;
 }
+#endif /* CONFIG_PM_SLEEP */
 
 static const struct dev_pm_ops riic_i2c_pm_ops = {
+	SET_NOIRQ_SYSTEM_SLEEP_PM_OPS(riic_i2c_suspend_noirq, riic_i2c_resume_noirq)
 	SET_SYSTEM_SLEEP_PM_OPS(riic_i2c_suspend, riic_i2c_resume)
 };
 
