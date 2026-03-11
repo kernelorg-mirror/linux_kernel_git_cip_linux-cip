@@ -102,6 +102,14 @@ int of_irq_parse_raw(const __be32 *addr, struct of_phandle_args *out_irq)
 	const __be32 *tmp, *imap, *imask, dummy_imask[] = { [0 ... MAX_PHANDLE_ARGS] = cpu_to_be32(~0) };
 	u32 intsize = 1, addrsize, newintsize = 0, newaddrsize = 0;
 	int imaplen, match, i, rc = -EINVAL;
+	static const char * const renesas_socs[] = {
+		"renesas,r9a08g045", /* Renesas RZ/G3S */
+		NULL
+	};
+	bool renesas = false;
+
+	if (of_machine_compatible_match(renesas_socs))
+		renesas = true;
 
 #ifdef DEBUG
 	of_print_phandle_args("of_irq_parse_raw: ", out_irq);
@@ -160,12 +168,17 @@ int of_irq_parse_raw(const __be32 *addr, struct of_phandle_args *out_irq)
 
 	/* Now start the actual "proper" walk of the interrupt tree */
 	while (ipar != NULL) {
-		/* Now check if cursor is an interrupt-controller and if it is
-		 * then we are done
+		/*
+		 * Now check if cursor is an interrupt-controller and
+		 * if it is then we are done, unless there is an
+		 * interrupt-map which takes precedence.
 		 */
+		imap = of_get_property(ipar, "interrupt-map", &imaplen);
 		if (of_property_read_bool(ipar, "interrupt-controller")) {
-			pr_debug(" -> got it !\n");
-			return 0;
+			if ((renesas && !imap) || !renesas) {
+				pr_debug(" -> got it !\n");
+				return 0;
+			}
 		}
 
 		/*
@@ -177,8 +190,6 @@ int of_irq_parse_raw(const __be32 *addr, struct of_phandle_args *out_irq)
 			goto fail;
 		}
 
-		/* Now look for an interrupt-map */
-		imap = of_get_property(ipar, "interrupt-map", &imaplen);
 		/* No interrupt map, check for an interrupt parent */
 		if (imap == NULL) {
 			pr_debug(" -> no map, getting parent\n");
@@ -258,6 +269,13 @@ int of_irq_parse_raw(const __be32 *addr, struct of_phandle_args *out_irq)
 			out_irq->args[i] = be32_to_cpup(imap - newintsize + i);
 		out_irq->args_count = intsize = newintsize;
 		addrsize = newaddrsize;
+
+		if (renesas) {
+			if (ipar == newpar) {
+				pr_debug("%pOF interrupt-map entry to self\n", ipar);
+				return 0;
+			}
+		}
 
 	skiplevel:
 		/* Iterate again with new parent */
