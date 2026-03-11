@@ -271,6 +271,7 @@ int of_irq_parse_raw(const __be32 *addr, struct of_phandle_args *out_irq)
 		addrsize = newaddrsize;
 
 		if (renesas) {
+			out_irq->np = newpar;
 			if (ipar == newpar) {
 				pr_debug("%pOF interrupt-map entry to self\n", ipar);
 				return 0;
@@ -279,8 +280,10 @@ int of_irq_parse_raw(const __be32 *addr, struct of_phandle_args *out_irq)
 
 	skiplevel:
 		/* Iterate again with new parent */
-		out_irq->np = newpar;
-		pr_debug(" -> new parent: %pOF\n", newpar);
+		if (!renesas) {
+			out_irq->np = newpar;
+			pr_debug(" -> new parent: %pOF\n", newpar);
+		}
 		of_node_put(ipar);
 		ipar = newpar;
 		newpar = NULL;
