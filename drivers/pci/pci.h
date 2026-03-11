@@ -26,6 +26,10 @@
  */
 #define PCIE_RESET_CONFIG_WAIT_MS	100
 
+/* Parameters for the waiting for link up routine */
+#define PCIE_LINK_WAIT_MAX_RETRIES	10
+#define PCIE_LINK_WAIT_SLEEP_MS		90
+
 extern const unsigned char pcie_link_speed[];
 extern bool pci_early_dump;
 
