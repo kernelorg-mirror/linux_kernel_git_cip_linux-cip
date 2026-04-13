@@ -11,13 +11,11 @@
 
 #include <linux/bitfield.h>
 #include <linux/cleanup.h>
-#include <linux/clk.h>
 #include <linux/err.h>
 #include <linux/io.h>
 #include <linux/irqchip.h>
 #include <linux/irqchip/irq-renesas-rzv2h.h>
 #include <linux/irqdomain.h>
-#include <linux/of_address.h>
 #include <linux/of_platform.h>
 #include <linux/pm_runtime.h>
 #include <linux/reset.h>
@@ -92,6 +90,20 @@
 #define ICU_RZG3E_TSSEL_MAX_VAL			0x8c
 #define ICU_RZV2H_TSSEL_MAX_VAL			0x55
 
+#define field_get(_mask, _reg) (((_reg) & (_mask)) >> (ffs(_mask) - 1))
+
+/**
+ * struct rzv2h_irqc_reg_cache - registers cache (necessary for suspend/resume)
+ * @nitsr: ICU_NITSR register
+ * @iitsr: ICU_IITSR register
+ * @titsr: ICU_TITSR registers
+ */
+struct rzv2h_irqc_reg_cache {
+	u32	nitsr;
+	u32	iitsr;
+	u32	titsr[2];
+};
+
 /**
  * struct rzv2h_hw_info - Interrupt Control Unit controller hardware info structure.
  * @tssel_lut:		TINT lookup table
@@ -121,13 +133,15 @@ struct rzv2h_hw_info {
  * @fwspec:	IRQ firmware specific data
  * @lock:	Lock to serialize access to hardware registers
  * @info:	Pointer to struct rzv2h_hw_info
+ * @cache:	Registers cache for suspend/resume
  */
-struct rzv2h_icu_priv {
+static struct rzv2h_icu_priv {
 	void __iomem			*base;
 	struct irq_fwspec		fwspec[ICU_NUM_IRQ];
 	raw_spinlock_t			lock;
 	const struct rzv2h_hw_info	*info;
-};
+	struct rzv2h_irqc_reg_cache	cache;
+} *rzv2h_icu_data;
 
 void rzv2h_icu_register_dma_req(struct platform_device *icu_dev, u8 dmac_index, u8 dmac_channel,
 				u16 req_no)
@@ -331,6 +345,7 @@ static int rzv2h_tint_set_type(struct irq_data *d, unsigned int type)
 	u32 titsr, titsr_k, titsel_n, tien;
 	struct rzv2h_icu_priv *priv;
 	u32 tssr, tssr_k, tssel_n;
+	u32 titsr_cur, tssr_cur;
 	unsigned int hwirq;
 	u32 tint, sense;
 	int tint_nr;
@@ -379,12 +394,18 @@ static int rzv2h_tint_set_type(struct irq_data *d, unsigned int type)
 	guard(raw_spinlock)(&priv->lock);
 
 	tssr = readl_relaxed(priv->base + priv->info->t_offs + ICU_TSSR(tssr_k));
+	titsr = readl_relaxed(priv->base + priv->info->t_offs + ICU_TITSR(titsr_k));
+
+	tssr_cur = field_get(ICU_TSSR_TSSEL_MASK(tssel_n, priv->info->field_width), tssr);
+	titsr_cur = field_get(ICU_TITSR_TITSEL_MASK(titsel_n), titsr);
+	if (tssr_cur == tint && titsr_cur == sense)
+		return 0;
+
 	tssr &= ~(ICU_TSSR_TSSEL_MASK(tssel_n, priv->info->field_width) | tien);
 	tssr |= ICU_TSSR_TSSEL_PREP(tint, tssel_n, priv->info->field_width);
 
 	writel_relaxed(tssr, priv->base + priv->info->t_offs + ICU_TSSR(tssr_k));
 
-	titsr = readl_relaxed(priv->base + priv->info->t_offs + ICU_TITSR(titsr_k));
 	titsr &= ~ICU_TITSR_TITSEL_MASK(titsel_n);
 	titsr |= ICU_TITSR_TITSEL_PREP(sense, titsel_n);
 
@@ -414,6 +435,40 @@ static int rzv2h_icu_set_type(struct irq_data *d, unsigned int type)
 
 	return irq_chip_set_type_parent(d, IRQ_TYPE_LEVEL_HIGH);
 }
+
+static int rzv2h_irqc_irq_suspend(void)
+{
+	struct rzv2h_irqc_reg_cache *cache = &rzv2h_icu_data->cache;
+	void __iomem *base = rzv2h_icu_data->base;
+
+	cache->nitsr = readl_relaxed(base + ICU_NITSR);
+	cache->iitsr = readl_relaxed(base + ICU_IITSR);
+	for (unsigned int i = 0; i < 2; i++)
+		cache->titsr[i] = readl_relaxed(base + rzv2h_icu_data->info->t_offs + ICU_TITSR(i));
+
+	return 0;
+}
+
+static void rzv2h_irqc_irq_resume(void)
+{
+	struct rzv2h_irqc_reg_cache *cache = &rzv2h_icu_data->cache;
+	void __iomem *base = rzv2h_icu_data->base;
+
+	/*
+	 * Restore only interrupt type. TSSRx will be restored at the
+	 * request of pin controller to avoid spurious interrupts due
+	 * to invalid PIN states.
+	 */
+	for (unsigned int i = 0; i < 2; i++)
+		writel_relaxed(cache->titsr[i], base + rzv2h_icu_data->info->t_offs + ICU_TITSR(i));
+	writel_relaxed(cache->iitsr, base + ICU_IITSR);
+	writel_relaxed(cache->nitsr, base + ICU_NITSR);
+}
+
+static struct syscore_ops rzv2h_irqc_syscore_ops = {
+	.suspend	= rzv2h_irqc_irq_suspend,
+	.resume		= rzv2h_irqc_irq_resume,
+};
 
 static const struct irq_chip rzv2h_icu_chip = {
 	.name			= "rzv2h-icu",
@@ -502,7 +557,6 @@ static int rzv2h_icu_init_common(struct device_node *node, struct device_node *p
 				 const struct rzv2h_hw_info *hw_info)
 {
 	struct irq_domain *irq_domain, *parent_domain;
-	struct rzv2h_icu_priv *rzv2h_icu_data;
 	struct platform_device *pdev;
 	struct reset_control *resetn;
 	int ret;
@@ -566,6 +620,8 @@ static int rzv2h_icu_init_common(struct device_node *node, struct device_node *p
 	}
 
 	rzv2h_icu_data->info = hw_info;
+
+	register_syscore_ops(&rzv2h_irqc_syscore_ops);
 
 	/*
 	 * coccicheck complains about a missing put_device call before returning, but it's a false
@@ -633,6 +689,7 @@ static int rzv2h_icu_init(struct device_node *node, struct device_node *parent)
 
 IRQCHIP_PLATFORM_DRIVER_BEGIN(rzv2h_icu)
 IRQCHIP_MATCH("renesas,r9a09g047-icu", rzg3e_icu_init)
+IRQCHIP_MATCH("renesas,r9a09g056-icu", rzv2h_icu_init)
 IRQCHIP_MATCH("renesas,r9a09g057-icu", rzv2h_icu_init)
 IRQCHIP_PLATFORM_DRIVER_END(rzv2h_icu)
 MODULE_AUTHOR("Fabrizio Castro <fabrizio.castro.jz@renesas.com>");
