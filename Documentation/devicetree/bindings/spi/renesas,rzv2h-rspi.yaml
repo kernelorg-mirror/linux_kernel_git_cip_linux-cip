@@ -57,12 +57,16 @@ properties:
       - const: tresetn
 
   dmas:
-    maxItems: 2
+    minItems: 2
+    maxItems: 10
 
   dma-names:
+    minItems: 2
+    maxItems: 10
     items:
-      - const: rx
-      - const: tx
+      enum:
+        - rx
+        - tx
 
   power-domains:
     maxItems: 1
