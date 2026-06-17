@@ -247,8 +247,6 @@ static int rzv2h_rspi_transfer_one(struct spi_controller *controller,
 
 	rzv2h_rspi_clear_all_irqs(rspi);
 
-	spi_finalize_current_transfer(controller);
-
 	return ret;
 }
 
