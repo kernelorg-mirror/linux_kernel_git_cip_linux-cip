@@ -17,7 +17,9 @@ properties:
     oneOf:
       - const: renesas,r9a09g057-rspi # RZ/V2H(P)
       - items:
-          - const: renesas,r9a09g056-rspi # RZ/V2N
+          - enum:
+              - renesas,r9a09g047-rspi # RZ/G3E
+              - renesas,r9a09g056-rspi # RZ/V2N
           - const: renesas,r9a09g057-rspi
 
   reg:
