@@ -884,6 +884,7 @@ static struct platform_driver rcar_gen3_phy_usb2_driver = {
 		.name		= "phy_rcar_gen3_usb2",
 		.of_match_table	= rcar_gen3_phy_usb2_match_table,
 		.pm		= pm_ptr(&rcar_gen3_phy_usb2_pm_ops),
+		.suppress_bind_attrs = true,
 	},
 	.probe	= rcar_gen3_phy_usb2_probe,
 	.remove = rcar_gen3_phy_usb2_remove,
