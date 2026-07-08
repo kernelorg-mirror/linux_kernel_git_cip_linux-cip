@@ -343,6 +343,7 @@ static struct platform_driver rzg2l_usbphy_ctrl_driver = {
 		.name		= "rzg2l_usbphy_ctrl",
 		.of_match_table	= rzg2l_usbphy_ctrl_match_table,
 		.pm		= pm_ptr(&rzg2l_usbphy_ctrl_pm_ops),
+		.suppress_bind_attrs = true,
 	},
 	.probe	= rzg2l_usbphy_ctrl_probe,
 	.remove	= rzg2l_usbphy_ctrl_remove,
