@@ -17,7 +17,9 @@ properties:
     oneOf:
       - const: renesas,r9a09g057-rspi # RZ/V2H(P)
       - items:
-          - const: renesas,r9a09g056-rspi # RZ/V2N
+          - enum:
+              - renesas,r9a09g047-rspi # RZ/G3E
+              - renesas,r9a09g056-rspi # RZ/V2N
           - const: renesas,r9a09g057-rspi
 
   reg:
@@ -55,6 +57,21 @@ properties:
     items:
       - const: presetn
       - const: tresetn
+
+  dmas:
+    minItems: 2
+    maxItems: 10
+    description:
+      Must contain a list of pairs of references to DMA specifiers, one for
+      transmission, and one for reception.
+
+  dma-names:
+    minItems: 2
+    maxItems: 10
+    items:
+      enum:
+        - rx
+        - tx
 
   power-domains:
     maxItems: 1
