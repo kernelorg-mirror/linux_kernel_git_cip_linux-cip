@@ -399,7 +399,7 @@ extern int of_alias_get_alias_list(const struct of_device_id *matches,
 				   const char *stem, unsigned long *bitmap,
 				   unsigned int nbits);
 
-extern int of_machine_is_compatible(const char *compat);
+extern bool of_machine_is_compatible(const char *compat);
 bool of_machine_compatible_match(const char *const *compats);
 
 extern int of_add_property(struct device_node *np, struct property *prop);
