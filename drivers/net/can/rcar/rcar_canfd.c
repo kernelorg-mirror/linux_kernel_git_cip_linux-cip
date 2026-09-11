@@ -509,12 +509,6 @@
  */
 #define RCANFD_CFFIFO_IDX		0
 
-/* fCAN clock select register settings */
-enum rcar_canfd_fcanclk {
-	RCANFD_CANFDCLK = 0,		/* CANFD clock */
-	RCANFD_EXTCLK,			/* Externally input clock */
-};
-
 struct rcar_canfd_global;
 
 struct rcar_canfd_hw_info {
@@ -547,8 +541,8 @@ struct rcar_canfd_global {
 	struct clk *clkp;		/* Peripheral clock */
 	struct clk *can_clk;		/* fCAN clock */
 	struct clk *clk_ram;		/* Clock RAM */
-	enum rcar_canfd_fcanclk fcan;	/* CANFD or Ext clock */
 	unsigned long channels_mask;	/* Enabled channels mask */
+	bool extclk;			/* CANFD or Ext clock */
 	bool fdmode;			/* CAN FD or Classical CAN only mode */
 	struct reset_control *rstc1;
 	struct reset_control *rstc2;
@@ -780,7 +774,7 @@ static void rcar_canfd_configure_controller(struct rcar_canfd_global *gpriv)
 		cfg |= RCANFD_GCFG_CMPOC;
 
 	/* Set External Clock if selected */
-	if (gpriv->fcan != RCANFD_CANFDCLK)
+	if (gpriv->extclk)
 		cfg |= RCANFD_GCFG_DCS;
 
 	rcar_canfd_set_bit(gpriv->base, RCANFD_GCFG, cfg);
@@ -2036,16 +2030,12 @@ static int rcar_canfd_probe(struct platform_device *pdev)
 			return dev_err_probe(dev, PTR_ERR(gpriv->can_clk),
 					     "cannot get canfd clock\n");
 
-		gpriv->fcan = RCANFD_CANFDCLK;
-
+		/* CANFD clock may be further divided within the IP */
+		fcan_freq = clk_get_rate(gpriv->can_clk) / info->postdiv;
 	} else {
-		gpriv->fcan = RCANFD_EXTCLK;
+		fcan_freq = clk_get_rate(gpriv->can_clk);
+		gpriv->extclk = true;
 	}
-	fcan_freq = clk_get_rate(gpriv->can_clk);
-
-	if (gpriv->fcan == RCANFD_CANFDCLK)
-		/* CANFD clock is further divided by (1/2) within the IP */
-		fcan_freq /= info->postdiv;
 
 	gpriv->clk_ram = devm_clk_get_optional(&pdev->dev, "ram_clk");
 	if (IS_ERR(gpriv->clk_ram))
@@ -2111,7 +2101,7 @@ static int rcar_canfd_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, gpriv);
 	dev_info(dev, "global operational state (clk %d, fdmode %d)\n",
-		 gpriv->fcan, gpriv->fdmode);
+		 gpriv->extclk, gpriv->fdmode);
 	return 0;
 
 fail_channel:
