@@ -2166,9 +2166,9 @@ static int rcar_canfd_probe(struct platform_device *pdev)
 		gpriv->extclk = gpriv->info->external_clk;
 	}
 
-	gpriv->clk_ram = devm_clk_get_optional(&pdev->dev, "ram_clk");
+	gpriv->clk_ram = devm_clk_get_optional(dev, "ram_clk");
 	if (IS_ERR(gpriv->clk_ram))
-		return dev_err_probe(&pdev->dev, PTR_ERR(gpriv->clk_ram),
+		return dev_err_probe(dev, PTR_ERR(gpriv->clk_ram),
 				     "cannot get ram clock\n");
 
 	addr = devm_platform_ioremap_resource(pdev, 0);
