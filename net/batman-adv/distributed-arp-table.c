@@ -154,10 +154,13 @@ static void batadv_dat_purge(struct work_struct *work)
  */
 static int batadv_compare_dat(const struct hlist_node *node, const void *data2)
 {
-	const void *data1 = container_of(node, struct batadv_dat_entry,
-					 hash_entry);
+	const struct batadv_dat_entry *entry1;
+	const struct batadv_dat_entry *entry2;
 
-	return memcmp(data1, data2, sizeof(__be32)) == 0 ? 1 : 0;
+	entry1 = container_of(node, struct batadv_dat_entry, hash_entry);
+	entry2 = data2;
+
+	return entry1->ip == entry2->ip && entry1->vid == entry2->vid;
 }
 
 /**
@@ -280,6 +283,9 @@ batadv_dat_entry_hash_find(struct batadv_priv *bat_priv, __be32 ip,
 	rcu_read_lock();
 	hlist_for_each_entry_rcu(dat_entry, head, hash_entry) {
 		if (dat_entry->ip != ip)
+			continue;
+
+		if (dat_entry->vid != vid)
 			continue;
 
 		if (!atomic_inc_not_zero(&dat_entry->refcount))
@@ -477,7 +483,7 @@ static bool batadv_is_orig_node_eligible(struct batadv_dat_candidate *res,
 	 * the one with the lowest address
 	 */
 	if ((tmp_max == max) && max_orig_node &&
-	    (batadv_compare_eth(candidate->orig, max_orig_node->orig) > 0))
+	    (memcmp(candidate->orig, max_orig_node->orig, ETH_ALEN) >= 0))
 		goto out;
 
 	ret = true;
@@ -912,6 +918,9 @@ out:
  * @skb: the buffer containing the packet to extract the VID from
  * @hdr_size: the size of the batman-adv header encapsulating the packet
  *
+ * The caller must ensure that at least @hdr_size + ETH_HLEN bytes are
+ * accessible after skb->data.
+ *
  * If the packet embedded in the skb is vlan tagged this function returns the
  * VID with the BATADV_VLAN_HAS_TAG flag. Otherwise BATADV_NO_FLAGS is returned.
  */
@@ -955,6 +964,10 @@ bool batadv_dat_snoop_outgoing_arp_request(struct batadv_priv *bat_priv,
 	unsigned short vid;
 
 	if (!atomic_read(&bat_priv->distributed_arp_table))
+		goto out;
+
+	/* first, find out the vid. */
+	if (!pskb_may_pull(skb, hdr_size + ETH_HLEN))
 		goto out;
 
 	vid = batadv_dat_get_vid(skb, &hdr_size);
@@ -1049,6 +1062,10 @@ bool batadv_dat_snoop_incoming_arp_request(struct batadv_priv *bat_priv,
 	if (!atomic_read(&bat_priv->distributed_arp_table))
 		goto out;
 
+	/* first, find out the vid. */
+	if (!pskb_may_pull(skb, hdr_size + ETH_HLEN))
+		goto out;
+
 	vid = batadv_dat_get_vid(skb, &hdr_size);
 
 	type = batadv_arp_get_type(bat_priv, skb, hdr_size);
@@ -1127,6 +1144,10 @@ void batadv_dat_snoop_outgoing_arp_reply(struct batadv_priv *bat_priv,
 	if (!atomic_read(&bat_priv->distributed_arp_table))
 		return;
 
+	/* first, find out the vid. */
+	if (!pskb_may_pull(skb, hdr_size + ETH_HLEN))
+		return;
+
 	vid = batadv_dat_get_vid(skb, &hdr_size);
 
 	type = batadv_arp_get_type(bat_priv, skb, hdr_size);
@@ -1171,6 +1192,10 @@ bool batadv_dat_snoop_incoming_arp_reply(struct batadv_priv *bat_priv,
 	unsigned short vid;
 
 	if (!atomic_read(&bat_priv->distributed_arp_table))
+		goto out;
+
+	/* first, find out the vid. */
+	if (!pskb_may_pull(skb, hdr_size + ETH_HLEN))
 		goto out;
 
 	vid = batadv_dat_get_vid(skb, &hdr_size);
@@ -1234,6 +1259,10 @@ bool batadv_dat_drop_broadcast_packet(struct batadv_priv *bat_priv,
 	 * information that it is going to ask, then the packet can be dropped
 	 */
 	if (forw_packet->num_packets)
+		goto out;
+
+	/* first, find out the vid. */
+	if (!pskb_may_pull(forw_packet->skb, hdr_size + ETH_HLEN))
 		goto out;
 
 	vid = batadv_dat_get_vid(forw_packet->skb, &hdr_size);
