@@ -112,8 +112,6 @@
 #define ICU_NUM_BE				4
 #define ICU_NUM_A55ERR				4
 
-#define field_get(_mask, _reg) (((_reg) & (_mask)) >> (ffs(_mask) - 1))
-
 /**
  * struct rzv2h_irqc_reg_cache - registers cache (necessary for suspend/resume)
  * @nitsr: ICU_NITSR register
