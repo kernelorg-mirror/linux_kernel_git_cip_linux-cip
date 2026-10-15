@@ -15,7 +15,7 @@
 #include "serial_mctrl_gpio.h"
 #include "rsci.h"
 
-MODULE_IMPORT_NS("SH_SCI");
+MODULE_IMPORT_NS(SH_SCI);
 
 /* RSCI registers */
 #define RDR	0x00
