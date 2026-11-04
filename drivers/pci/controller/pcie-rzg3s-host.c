@@ -1554,7 +1554,7 @@ static int rzg3s_pcie_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct device_node *np = dev->of_node;
 	struct device_node *sysc_np __free(device_node) =
-		of_parse_phandle(np, "renesas,sysc", 0);;
+		of_parse_phandle(np, "renesas,sysc", 0);
 	struct rzg3s_pcie_host *host;
 	int ret;
 
