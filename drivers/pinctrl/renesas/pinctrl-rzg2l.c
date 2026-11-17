@@ -318,8 +318,8 @@ struct rzg2l_pinctrl_pin_settings {
  * @pmc: PMC registers cache
  * @pfc: PFC registers cache
  * @iolh: IOLH registers cache
- * @pupd: PUPD registers cache
  * @ien: IEN registers cache
+ * @pupd: PUPD registers cache
  * @smt: SMT registers cache
  * @sd_ch: SD_CH registers cache
  * @eth_poc: ET_POC registers cache
