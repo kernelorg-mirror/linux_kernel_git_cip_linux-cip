@@ -62,6 +62,7 @@
 #define PIN_CFG_SMT			BIT(16)	/* Schmitt-trigger input control */
 #define PIN_CFG_ELC			BIT(17)
 #define PIN_CFG_IOLH_RZV2H		BIT(18)
+#define PIN_CFG_IO_VMC_I3C		BIT(19)
 
 #define RZG2L_SINGLE_PIN		BIT_ULL(63)	/* Dedicated pin */
 #define RZG2L_VARIABLE_CFG		BIT_ULL(62)	/* Variable cfg for port pins */
@@ -217,6 +218,7 @@ static const struct pin_config_item renesas_rzv2h_conf_items[] = {
  * @eth_poc: ETH_POC register offset
  * @oen: OEN register offset
  * @qspi: QSPI register offset
+ * @i3c_set: I3C_SET register offset
  */
 struct rzg2l_register_offsets {
 	u16 pwpr;
@@ -224,6 +226,15 @@ struct rzg2l_register_offsets {
 	u16 eth_poc;
 	u16 oen;
 	u16 qspi;
+	u16 i3c_set;
+};
+
+/**
+ * struct rzg2l_register_masks - Masks for different RZ/G2L pinctrl functionalities
+ * @i3c_set_poc: I3C_SET_POC mask
+ */
+struct rzg2l_register_masks {
+	u8 i3c_set_poc;
 };
 
 /**
@@ -248,6 +259,8 @@ enum rzg2l_iolh_index {
 /**
  * struct rzg2l_hwcfg - hardware configuration data structure
  * @regs: hardware specific register offsets
+ * @masks: hardware specific masks for various functionalities available in
+ * the registers described by regs
  * @iolh_groupa_ua: IOLH group A uA specific values
  * @iolh_groupb_ua: IOLH group B uA specific values
  * @iolh_groupc_ua: IOLH group C uA specific values
@@ -261,6 +274,7 @@ enum rzg2l_iolh_index {
  */
 struct rzg2l_hwcfg {
 	const struct rzg2l_register_offsets regs;
+	const struct rzg2l_register_masks masks;
 	u16 iolh_groupa_ua[RZG2L_IOLH_IDX_MAX];
 	u16 iolh_groupb_ua[RZG2L_IOLH_IDX_MAX];
 	u16 iolh_groupc_ua[RZG2L_IOLH_IDX_MAX];
@@ -326,6 +340,7 @@ struct rzg2l_pinctrl_pin_settings {
  * @eth_poc: ET_POC registers cache
  * @oen: Output Enable register cache
  * @qspi: QSPI registers cache
+ * @i3c_set: I3C_SET register cache
  */
 struct rzg2l_pinctrl_reg_cache {
 	u8	*p;
@@ -340,6 +355,7 @@ struct rzg2l_pinctrl_reg_cache {
 	u8	eth_poc[2];
 	u8	oen;
 	u8	qspi;
+	u8	i3c_set;
 };
 
 struct rzg2l_pinctrl {
@@ -408,6 +424,10 @@ static const struct rzg2l_pinctrl_ps_desc available_ps[] = {
 	/* QSPI I/O voltage domains */
 	RZG2L_PINCTRL_PS_DESC(1800, 1, PIN_CFG_IO_VMC_QSPI, RZG2L_IOLH_IDX_1V8),
 	RZG2L_PINCTRL_PS_DESC(3300, 0, PIN_CFG_IO_VMC_QSPI, RZG2L_IOLH_IDX_3V3),
+
+	/* I3C I/O voltage domains */
+	RZG2L_PINCTRL_PS_DESC(1200, 1, PIN_CFG_IO_VMC_I3C, RZG2L_IOLH_IDX_NA),
+	RZG2L_PINCTRL_PS_DESC(1800, 0, PIN_CFG_IO_VMC_I3C, RZG2L_IOLH_IDX_NA),
 
 	/* Software voltage domains */
 	RZG2L_PINCTRL_PS_DESC(1800, 0, PIN_CFG_SOFT_PS, RZG2L_IOLH_IDX_1V8),
@@ -960,6 +980,7 @@ static void rzg2l_rmw_pin_config(struct rzg2l_pinctrl *pctrl, u32 offset,
 }
 
 static int rzg2l_caps_to_pwr_reg(const struct rzg2l_register_offsets *regs,
+				 const struct rzg2l_register_masks *masks,
 				 u32 caps, u16 *offset, u8 *mask)
 {
 	*mask = PVDD_MASK;
@@ -982,6 +1003,11 @@ static int rzg2l_caps_to_pwr_reg(const struct rzg2l_register_offsets *regs,
 	}
 	if (caps & PIN_CFG_IO_VMC_QSPI) {
 		*offset = regs->qspi;
+		return 0;
+	}
+	if (caps & PIN_CFG_IO_VMC_I3C) {
+		*offset = regs->i3c_set;
+		*mask = masks->i3c_set_poc;
 		return 0;
 	}
 
@@ -1014,6 +1040,7 @@ static int rzg2l_get_power_source(struct rzg2l_pinctrl *pctrl, u32 pin, u32 caps
 {
 	const struct rzg2l_hwcfg *hwcfg = pctrl->data->hwcfg;
 	const struct rzg2l_register_offsets *regs = &hwcfg->regs;
+	const struct rzg2l_register_masks *masks = &hwcfg->masks;
 	u8 mask, val;
 	u16 offset;
 	int ret;
@@ -1021,7 +1048,7 @@ static int rzg2l_get_power_source(struct rzg2l_pinctrl *pctrl, u32 pin, u32 caps
 	if (caps & PIN_CFG_SOFT_PS)
 		return pctrl->settings[pin].power_source;
 
-	ret = rzg2l_caps_to_pwr_reg(regs, caps, &offset, &mask);
+	ret = rzg2l_caps_to_pwr_reg(regs, masks, caps, &offset, &mask);
 	if (ret)
 		return ret;
 
@@ -1034,6 +1061,7 @@ static int rzg2l_set_power_source(struct rzg2l_pinctrl *pctrl, u32 pin, u32 caps
 {
 	const struct rzg2l_hwcfg *hwcfg = pctrl->data->hwcfg;
 	const struct rzg2l_register_offsets *regs = &hwcfg->regs;
+	const struct rzg2l_register_masks *masks = &hwcfg->masks;
 	u16 offset;
 	u8 mask;
 	int ret;
@@ -1043,7 +1071,7 @@ static int rzg2l_set_power_source(struct rzg2l_pinctrl *pctrl, u32 pin, u32 caps
 		return 0;
 	}
 
-	ret = rzg2l_caps_to_pwr_reg(regs, caps, &offset, &mask);
+	ret = rzg2l_caps_to_pwr_reg(regs, masks, caps, &offset, &mask);
 	if (ret)
 		return ret;
 
@@ -2288,6 +2316,8 @@ static const struct rzg2l_dedicated_configs rzg3s_dedicated_pins[] = {
 	{ "AUDIO_CLK1", RZG2L_SINGLE_PIN_PACK(0x2, 0, PIN_CFG_IEN) },
 	{ "AUDIO_CLK2", RZG2L_SINGLE_PIN_PACK(0x2, 1, PIN_CFG_IEN) },
 	{ "WDTOVF_PERROUT#", RZG2L_SINGLE_PIN_PACK(0x6, 0, PIN_CFG_IOLH_A | PIN_CFG_SOFT_PS) },
+	{ "I3C_SDA", RZG2L_SINGLE_PIN_PACK(0x9, 0, (PIN_CFG_IEN | PIN_CFG_IO_VMC_I3C)) },
+	{ "I3C_SCL", RZG2L_SINGLE_PIN_PACK(0x9, 1, (PIN_CFG_IEN | PIN_CFG_IO_VMC_I3C)) },
 	{ "SD0_CLK", RZG2L_SINGLE_PIN_PACK(0x10, 0, (PIN_CFG_IOLH_B | PIN_CFG_IO_VMC_SD0)) },
 	{ "SD0_CMD", RZG2L_SINGLE_PIN_PACK(0x10, 1, (PIN_CFG_IOLH_B | PIN_CFG_IEN |
 						     PIN_CFG_IO_VMC_SD0)) },
@@ -3277,6 +3307,8 @@ static int rzg2l_pinctrl_suspend_noirq(struct device *dev)
 	if (regs->qspi)
 		cache->qspi = readb(pctrl->base + regs->qspi);
 	cache->oen = readb(pctrl->base + pctrl->data->hwcfg->regs.oen);
+	if (regs->i3c_set)
+		cache->i3c_set = readb(pctrl->base + regs->i3c_set);
 
 	if (!atomic_read(&pctrl->wakeup_path))
 		clk_disable_unprepare(pctrl->clk);
@@ -3303,6 +3335,8 @@ static int rzg2l_pinctrl_resume_noirq(struct device *dev)
 
 	if (regs->qspi)
 		writeb(cache->qspi, pctrl->base + regs->qspi);
+	if (regs->i3c_set)
+		writeb(cache->i3c_set, pctrl->base + regs->i3c_set);
 
 	raw_spin_lock_irqsave(&pctrl->lock, flags);
 	rzg2l_oen_write_with_pwpr(pctrl, cache->oen);
@@ -3376,7 +3410,11 @@ static const struct rzg2l_hwcfg rzg3s_hwcfg = {
 		.pwpr = 0x3000,
 		.sd_ch = 0x3004,
 		.eth_poc = 0x3010,
+		.i3c_set = 0x301c,
 		.oen = 0x3018,
+	},
+	.masks = {
+		.i3c_set_poc = BIT(2),
 	},
 	.iolh_groupa_ua = {
 		/* 1v8 power source */
