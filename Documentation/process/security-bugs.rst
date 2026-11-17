@@ -3,6 +3,12 @@
 Security bugs
 =============
 
+.. note::
+
+   If you identified a vulnerability that only affects a CIP kernel, please
+   instead follow the reporting process described in SECURITY.md that can be
+   found in the top-level directory.
+
 Linux kernel developers take security very seriously.  As such, we'd
 like to know when a security bug is found so that it can be fixed and
 disclosed as quickly as possible.  Please report security bugs to the
