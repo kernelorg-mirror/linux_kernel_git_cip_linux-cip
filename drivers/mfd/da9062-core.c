@@ -182,24 +182,24 @@ static const struct resource da9061_onkey_resources[] = {
 };
 
 static const struct mfd_cell da9061_devs_irq[] = {
-	OF_MFD_CELL("da9061-core", da9061_core_resources, NULL, 0, 0,
+	MFD_CELL_OF("da9061-core", da9061_core_resources, NULL, 0, 0,
 		    NULL),
-	OF_MFD_CELL("da9062-regulators", da9061_regulators_resources, NULL, 0, 0,
+	MFD_CELL_OF("da9062-regulators", da9061_regulators_resources, NULL, 0, 0,
 		    NULL),
-	OF_MFD_CELL("da9061-watchdog", da9061_wdt_resources, NULL, 0, 0,
+	MFD_CELL_OF("da9061-watchdog", da9061_wdt_resources, NULL, 0, 0,
 		    "dlg,da9061-watchdog"),
-	OF_MFD_CELL("da9061-thermal", da9061_thermal_resources, NULL, 0, 0,
+	MFD_CELL_OF("da9061-thermal", da9061_thermal_resources, NULL, 0, 0,
 		    "dlg,da9061-thermal"),
-	OF_MFD_CELL("da9061-onkey", da9061_onkey_resources, NULL, 0, 0,
+	MFD_CELL_OF("da9061-onkey", da9061_onkey_resources, NULL, 0, 0,
 		    "dlg,da9061-onkey"),
 };
 
 static const struct mfd_cell da9061_devs_noirq[] = {
-	OF_MFD_CELL("da9061-core", NULL, NULL, 0, 0, NULL),
-	OF_MFD_CELL("da9062-regulators", NULL, NULL, 0, 0, NULL),
-	OF_MFD_CELL("da9061-watchdog", NULL, NULL, 0, 0, "dlg,da9061-watchdog"),
-	OF_MFD_CELL("da9061-thermal", NULL, NULL, 0, 0, "dlg,da9061-thermal"),
-	OF_MFD_CELL("da9061-onkey", NULL, NULL, 0, 0, "dlg,da9061-onkey"),
+	MFD_CELL_OF("da9061-core", NULL, NULL, 0, 0, NULL),
+	MFD_CELL_OF("da9062-regulators", NULL, NULL, 0, 0, NULL),
+	MFD_CELL_OF("da9061-watchdog", NULL, NULL, 0, 0, "dlg,da9061-watchdog"),
+	MFD_CELL_OF("da9061-thermal", NULL, NULL, 0, 0, "dlg,da9061-thermal"),
+	MFD_CELL_OF("da9061-onkey", NULL, NULL, 0, 0, "dlg,da9061-onkey"),
 };
 
 static const struct resource da9062_core_resources[] = {
@@ -236,30 +236,30 @@ static const struct resource da9062_gpio_resources[] = {
 };
 
 static const struct mfd_cell da9062_devs_irq[] = {
-	OF_MFD_CELL("da9062-core", da9062_core_resources, NULL, 0, 0,
+	MFD_CELL_OF("da9062-core", da9062_core_resources, NULL, 0, 0,
 		    NULL),
-	OF_MFD_CELL("da9062-regulators", da9062_regulators_resources, NULL, 0, 0,
+	MFD_CELL_OF("da9062-regulators", da9062_regulators_resources, NULL, 0, 0,
 		    NULL),
-	OF_MFD_CELL("da9062-watchdog", da9062_wdt_resources, NULL, 0, 0,
+	MFD_CELL_OF("da9062-watchdog", da9062_wdt_resources, NULL, 0, 0,
 		    "dlg,da9062-watchdog"),
-	OF_MFD_CELL("da9062-thermal", da9062_thermal_resources, NULL, 0, 0,
+	MFD_CELL_OF("da9062-thermal", da9062_thermal_resources, NULL, 0, 0,
 		    "dlg,da9062-thermal"),
-	OF_MFD_CELL("da9062-rtc", da9062_rtc_resources, NULL, 0, 0,
+	MFD_CELL_OF("da9062-rtc", da9062_rtc_resources, NULL, 0, 0,
 		    "dlg,da9062-rtc"),
-	OF_MFD_CELL("da9062-onkey", da9062_onkey_resources, NULL, 0, 0,
+	MFD_CELL_OF("da9062-onkey", da9062_onkey_resources, NULL, 0, 0,
 		    "dlg,da9062-onkey"),
-	OF_MFD_CELL("da9062-gpio", da9062_gpio_resources, NULL, 0, 0,
+	MFD_CELL_OF("da9062-gpio", da9062_gpio_resources, NULL, 0, 0,
 		    "dlg,da9062-gpio"),
 };
 
 static const struct mfd_cell da9062_devs_noirq[] = {
-	OF_MFD_CELL("da9062-core", NULL, NULL, 0, 0, NULL),
-	OF_MFD_CELL("da9062-regulators", NULL, NULL, 0, 0, NULL),
-	OF_MFD_CELL("da9062-watchdog", NULL, NULL, 0, 0, "dlg,da9062-watchdog"),
-	OF_MFD_CELL("da9062-thermal", NULL, NULL, 0, 0, "dlg,da9062-thermal"),
-	OF_MFD_CELL("da9062-rtc", NULL, NULL, 0, 0, "dlg,da9062-rtc"),
-	OF_MFD_CELL("da9062-onkey", NULL, NULL, 0, 0, "dlg,da9062-onkey"),
-	OF_MFD_CELL("da9062-gpio", NULL, NULL, 0, 0, "dlg,da9062-gpio"),
+	MFD_CELL_OF("da9062-core", NULL, NULL, 0, 0, NULL),
+	MFD_CELL_OF("da9062-regulators", NULL, NULL, 0, 0, NULL),
+	MFD_CELL_OF("da9062-watchdog", NULL, NULL, 0, 0, "dlg,da9062-watchdog"),
+	MFD_CELL_OF("da9062-thermal", NULL, NULL, 0, 0, "dlg,da9062-thermal"),
+	MFD_CELL_OF("da9062-rtc", NULL, NULL, 0, 0, "dlg,da9062-rtc"),
+	MFD_CELL_OF("da9062-onkey", NULL, NULL, 0, 0, "dlg,da9062-onkey"),
+	MFD_CELL_OF("da9062-gpio", NULL, NULL, 0, 0, "dlg,da9062-gpio"),
 };
 
 static int da9062_clear_fault_log(struct da9062 *chip)
